@@ -1,10 +1,11 @@
-# Searching Method
+# ITLDIMS Program
 
 ## Setup
 - [Install etcd](https://etcd.io/docs/v3.4/install/) and create a single node etcd (locally, if needed) by running the `etcd` command
 - Clone the [itldims directory](https://github.com/yash-anand-fosteringlinux/itldims-cmd/tree/main/itldims)
 - In the [etcd-inventory](https://github.com/yash-anand-fosteringlinux/CommandsAndCodes/tree/main/yes1/etcd-inventory) directory, `go run` [main.go](https://github.com/yash-anand-fosteringlinux/itldims-cmd/blob/main/itldims/main.go) for connecting with the API
-- Run the `itldims` related commands from the cmd directory
+- Run the `itldims` related commands from the cmd directory.
+- If needed, Refer to the [Spreadsheet](https://docs.google.com/spreadsheets/d/1_oHivMUs1j4XZFSn3yZTKNkx50YXNYqU/edit#gid=1907009990) which consists of all the data that is uploaded to DB.
 
 ## Topics
 - Setup
