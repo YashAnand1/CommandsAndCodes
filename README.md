@@ -33,7 +33,7 @@
 | 8| `itldims get <Server IP/Type/Attribute> <Value>` | Displays all Server IPs containing a specific value  | User can find if any attribute is 'None' on '10.249.221.22' |
 | 9| `itldims get <key>` | Displays value of a key, when the key is mentioned | User can find the value directly from the entire key |
 
-## Outputs of Command Combinations
+## Outputs Of 'get' Commands
 The possible combinations along with their outputs for the `itldims get` command have been provided below. For any output which is too lengthy, `. . . . .` has been used at the end to signify that the mentioned output gives complete data but is not being shown here completely.
 
 **1. `itldims get servers`to get the following output:**
@@ -215,7 +215,7 @@ Value: 32GB
 |-------|-----------------------------------|---------------------------------------------------------|------------|
 | 1| `itldims create -k <key> -v <value>` | Posts the mentioned value to the specified key | Helps user post values of keys |
 
-## Outputs of Command Combinations
+## Outputs Of 'create' Commands
 The possible combinations along with their outputs for the `itldims create` command have been provided below.
 **1. `itldims create -k <key> -v <value>` or `itldims create -k /servers/Physical/10.246.40.139/Hostname -v vahanapp18` to get the following output:**
 ``` 
