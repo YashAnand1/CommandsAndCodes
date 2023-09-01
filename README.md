@@ -11,7 +11,6 @@
 - Command Combinations
 - - get
 - - create 
-- Outputs of Command Combinations
 - Setup
 
 # Workings of the code
