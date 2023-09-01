@@ -217,7 +217,7 @@ Value: 32GB
 | 1| `itldims create -k <key> -v <value>` | Posts the mentioned value to the specified key | Helps user post values of keys |
 
 ## Outputs Of 'create' Commands
-The possible combinations along with their outputs for the `itldims create` command have been provided below.
+The possible combinations along with their outputs for the `itldims create` command have been provided below.                     
 **1. `itldims create -k <key> -v <value>` or `itldims create -k /servers/Physical/10.246.40.139/Hostname -v vahanapp18` to get the following output:**
 ``` 
 Key: /servers/Physical/10.246.40.139/Hostname has been metered as vahanapp18 succesfully
