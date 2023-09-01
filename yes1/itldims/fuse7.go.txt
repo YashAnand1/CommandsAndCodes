@@ -1,0 +1,1208 @@
+package main
+
+///// for function tail support /////
+//https://github.com/hpcloud/tail
+// go get github.com/hpcloud/tail/...
+// also inport "github.com/hpcloud/tail"
+// one other system for tail https://stackoverflow.com/questions/10135738/reading-log-files-as-theyre-updated-in-go
+// for go routine and channel see https://www.golang-book.com/books/intro/10
+//https://docs.influxdata.com/influxdb/v1.3/write_protocols/line_protocol_tutorial/
+
+//https://stackoverflow.com/questions/74412021/prometheus-constlabels-take-value
+// https://grafana.com/docs/loki/latest/api/#push-log-entries-to-loki
+//https://blog.logrocket.com/making-http-requests-in-go/
+// https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#NewMetricWithTimestamp
+// https://groups.google.com/g/prometheus-developers/c/Z5KwE6KbwN0
+//https://stackoverflow.com/questions/65610580/how-can-we-add-our-own-timestamp-in-prometheus-metric-series
+//https://prometheus.io/docs/prometheus/latest/storage/#backfilling-from-openmetrics-format
+//https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/
+//https://clickhouse.com/docs/en/integrations/go
+//https://tabix.io/doc/Install/
+//https://stackoverflow.com/questions/69504691/how-do-i-add-histogram-to-prometheus-exporter-in-golang
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ClickHouse/clickhouse-go"
+	"github.com/hpcloud/tail"
+
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	// Import the Elasticsearch library packages
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+)
+
+/////////////////////
+
+var addr, datafilepath, regexStr, influxdbIP, myToken, myOrg, myBucket, lokiIP string
+var _measurment, _field string
+
+var apiDetails = map[int][]string{}
+var higherValue float64
+
+// var prom_newgauge = map[int][]prometheus.Gauge{}
+var prom_value = map[int][]float64{}
+
+var collector = map[int][]*myCollector{}
+var prom_time_value = map[int][]time.Time{}
+
+var promo_yes, promo_log_time, influxDb_yes, loki_yes, loki_log_time, influxDb_log_time, clickhouse_yes, clickhouse_log_time int
+var influx_client influxdb2.Client
+
+var clickhouse_IP, clickhouse_Database, clickhouse_table string
+var clickhouse_connect *sql.DB
+
+var elastic_IP, elastic_Database string
+var elastic_yes, elastic_log_time int
+var elastic_ctx context.Context
+var elastic_client *elasticsearch.Client
+
+// //////////////////////////////
+
+/////////////////////////
+
+// ///////////////////
+func main() {
+
+	var path_conf_file string = ""
+
+	if len(os.Args) == 2 {
+		path_conf_file = os.Args[1]
+	}
+
+	findPort(path_conf_file)
+
+	if promo_yes == 1 {
+		prom()
+	}
+	//////////////////////////////////////////////
+	if influxDb_yes == 1 {
+		influxInit()
+	}
+	if clickhouse_yes == 1 {
+		clickhouseInit()
+	}
+	///////////////////////
+	if elastic_yes == 1 {
+		elasticInit()
+	}
+	main1()
+}
+
+// ///////////////////////////////
+func read_conf_file(i int, line string, scanner *bufio.Scanner) {
+
+	switch i {
+	case 1:
+		datafilepath = line
+	case 2:
+		regexStr = line
+	case 3:
+		higherValue, _ = strconv.ParseFloat(line, 64)
+	case 4:
+		promo_yes, _ = strconv.Atoi(line)
+	case 5:
+		promo_log_time, _ = strconv.Atoi(line)
+	case 6:
+		addr = line
+	case 7:
+		influxDb_yes, _ = strconv.Atoi(line)
+	case 8:
+		influxdbIP = line
+	case 9:
+		myToken = line
+	case 10:
+		myOrg = line
+	case 11:
+		myBucket = line
+	case 12:
+		_measurment = line
+	case 13:
+		_field = line
+	case 14:
+		influxDb_log_time, _ = strconv.Atoi(line)
+	case 15:
+		numbers_api, _ := strconv.Atoi(line)
+		for j := 0; j < numbers_api; j++ {
+			scanner.Scan()
+			apiDetails[j] = append(apiDetails[j], scanner.Text())
+			scanner.Scan()
+			apiDetails[j] = append(apiDetails[j], scanner.Text())
+			scanner.Scan()
+			apiDetails[j] = append(apiDetails[j], scanner.Text())
+		}
+
+	case 16:
+		loki_yes, _ = strconv.Atoi(line)
+
+	case 17:
+		lokiIP = line
+
+	case 18:
+		loki_log_time, _ = strconv.Atoi(line)
+	case 19:
+		clickhouse_yes, _ = strconv.Atoi(line)
+	case 20:
+		clickhouse_IP = line
+	case 21:
+		clickhouse_Database = line
+	case 22:
+		clickhouse_table = line
+	case 23:
+		clickhouse_log_time, _ = strconv.Atoi(line)
+	case 24:
+		elastic_yes, _ = strconv.Atoi(line)
+	case 25:
+		elastic_IP = line
+	case 26:
+		elastic_Database = line
+	case 27:
+		elastic_log_time, _ = strconv.Atoi(line)
+
+	}
+}
+
+// /////////////////////////////
+func findPort(path_conf_file string) {
+
+	var i int
+
+	var line string
+	if path_conf_file == "" {
+		path_conf_file = "conf7-fuse.txt"
+	}
+
+	file, err := os.Open(path_conf_file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	///////////////////////////
+	fmt.Println("conf file is : ", path_conf_file)
+	//////////////////////////////
+	scanner := bufio.NewScanner(file)
+	scanner.Split(bufio.ScanLines)
+	i = 0
+	for scanner.Scan() {
+		line = scanner.Text()
+		if len(line) == 0 {
+			continue
+		}
+		if line[0] == '#' {
+			continue
+		}
+		i = i + 1
+		read_conf_file(i, line, scanner)
+
+	}
+
+	fmt.Println("path to log file: ", datafilepath)
+
+}
+
+// /////////////////////////////////////
+func prom() {
+
+	////////////// new system with timestamp /////
+	for i := 0; i < len(apiDetails); i++ {
+		abx := &myCollector{
+			metric: prometheus.NewDesc(
+				apiDetails[i][0],
+				"This is my metric with custom TS",
+				nil,
+				nil,
+			),
+		}
+		prometheus.MustRegister(abx)
+		collector[i] = append(collector[i], abx)
+		prom_value[i] = append(prom_value[i], 0)
+		prom_time_value[i] = append(prom_time_value[i], time.Now())
+
+	}
+
+	http.Handle("/metrics", promhttp.Handler())
+	//log.info("Beginning to serve on port :8080")
+	go http.ListenAndServe(addr, nil)
+
+	//////////////// old system without timestamp //////////////
+	// var prom_newgauge = map[int][]prometheus.Gauge{}
+
+	// reg := prometheus.NewRegistry()
+
+	// for i := 0; i < len(apiDetails); i++ {
+	// 	prom_newgauge[i] = append(prom_newgauge[i], prometheus.NewGauge(prometheus.GaugeOpts{Name: apiDetails[i][0], Help: "p0"}))
+	// 	reg.MustRegister(prom_newgauge[i][0])
+	// 	prom_value[i] = append(prom_value[i], 0)
+	// }
+
+	// recordMetrics2(prom_newgauge)
+	// //http.Handle("/metrics", promhttp.Handler())
+	// http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+	// go http.ListenAndServe(addr, nil)
+	//////////// put this function outside ///
+	// func recordMetrics2(prom_newgauge map[int][]prometheus.Gauge) {
+	// 	go func() {
+	// 		for {
+
+	// 			for i := 0; i < len(prom_newgauge); i++ {
+	// 				prom_newgauge[i][0].Set(prom_value[i][0])
+
+	// 			}
+
+	// 		}
+	// 	}()
+	// }
+
+	// // /////////////////////
+
+}
+
+///////////// functions for prometheus with time stamp///////
+
+type myCollector struct {
+	metric *prometheus.Desc
+}
+
+func (c *myCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.metric
+}
+
+func (c *myCollector) Collect(ch chan<- prometheus.Metric) {
+
+	var flag int
+	cc := strings.Split(c.metric.String(), "\"")
+	for flag = 0; flag < len(apiDetails); flag++ {
+		if apiDetails[flag][0] == cc[1] {
+			break
+		}
+	}
+	// your logic should be placed here
+	//t := time.Date(2023, time.June, 30, 10, 5, 0, 12345678, time.UTC)
+	s := prometheus.NewMetricWithTimestamp(prom_time_value[flag][0], prometheus.MustNewConstMetric(c.metric, prometheus.CounterValue, prom_value[flag][0]))
+	ch <- s
+}
+
+//////////////////////////////////////////
+
+func main1() {
+
+	var xcorelation = map[int][]string{}
+
+	var s_r = map[int][]int{}
+	var t_stamp = map[int][]string{}
+
+	var flag, sent_recive int
+	var xid, time_stamp string
+
+	///////////////////////////////////////////////////////////
+
+	t, _ := tail.TailFile(datafilepath, tail.Config{Follow: true})
+
+	for line := range t.Lines {
+
+		flag, xid, sent_recive, time_stamp = parse_line(line.Text)
+
+		// storing data in array for sendMoney -- sendMoney is flag=0 etc ///
+
+		if flag > -1 && flag < len(apiDetails) {
+
+			if len(time_stamp) > 12 {
+				xcorelation[flag] = append(xcorelation[flag], xid)
+				s_r[flag] = append(s_r[flag], sent_recive)
+				t_stamp[flag] = append(t_stamp[flag], time_stamp)
+
+				///////////////////////////////////////////
+				sub2(flag, xcorelation, s_r, t_stamp)
+				////////////////////////////////////////////
+
+			}
+
+		}
+
+		/////////////////////
+
+		for k := 0; k < len(apiDetails); k++ {
+			if len(xcorelation[k]) > 1000 {
+				fmt.Println("Clearing orfen x-corilation id's", time.Now())
+				for m := 0; m < 1000; m++ {
+					fmt.Println("k=", k, xcorelation[k][m])
+				}
+				xcorelation[k] = nil
+				s_r[k] = nil
+				t_stamp[k] = nil
+			}
+		}
+
+	}
+
+} // end of main
+
+// //////////////////////////////
+func parse_line(x string) (flag int, xid string, sent_recive int, time_stamp string) {
+
+	flag = -1
+	xid = ""
+	sent_recive = 3
+	time_stamp = ""
+	str := x
+	var ttt int = 0
+
+	///////////////////////////////////////////////////
+	for i := 0; i < len(apiDetails); i++ {
+		for j := 1; j < 3; j++ {
+			matchSign := (regexp.MustCompile(apiDetails[i][j])).FindStringSubmatch(str)
+			if matchSign != nil {
+				flag = i
+				sent_recive = j - 1
+				break
+			}
+		}
+	}
+	/////////////////////////////
+	var re = regexp.MustCompile(regexStr)
+	///////////////////////////////////
+
+	if flag != -1 {
+		match := re.FindStringSubmatch(str)
+		if len(match) > 9 && len(match[3]) == 8 {
+			if len(match[4]) == 4 {
+				xid = match[10]
+				xid = strings.TrimSpace(xid)
+				if len(xid) > 13 {
+					if (strings.Compare("X-Correlation", xid[0:13])) != 0 {
+						flag = -1
+					}
+				}
+				if len(xid) < 14 {
+					flag = -1
+				}
+
+				time_stamp = match[3]
+				//time_stamp = time_stamp + "." + match[4][:len(match[4])-1]
+				time_stamp = time_stamp + "." + strings.TrimSpace(match[4])
+				//////////////////////// "2006-01-02T15:04:05.999999999Z07:00"
+
+				time_stamp = match[2] + "T" + time_stamp + "+05:30"
+
+				/////////////////////////////////////////
+			}
+		} else {
+			flag = -1
+		}
+
+	}
+
+	////////////////////////
+	///////////////// sending data to grafana/loki ///////////
+
+	if loki_yes == 1 {
+		var api_name, info, log_line, line string
+
+		match1 := re.FindStringSubmatch(str)
+
+		if len(match1) > 6 && len(match1[3]) == 8 && len(match1[6]) > 2 && len(match1[5]) > 2 {
+			ttt = 1
+
+			xid = match1[10]
+			xid = strings.TrimSpace(xid)
+			if len(xid) > 13 {
+				if (strings.Compare("X-Correlation", xid[0:13])) != 0 {
+					ttt = 0
+				}
+			}
+			if len(xid) < 14 {
+				ttt = 0
+			}
+
+		}
+		/////////////////////////
+		if ttt == 1 {
+			api_name = match1[6]
+			info = match1[5]
+			log_line = str
+
+			if api_name[len(api_name)-1] == ' ' {
+
+				log_line = strings.ReplaceAll(log_line, "\"", "\\\"")
+
+				//log_line = fmt.Sprintf("%d", rand.Intn(1000))
+
+				time_stamp = match1[3]
+				time_stamp = time_stamp + "." + strings.TrimSpace(match1[4])
+				time_stamp = match1[2] + "T" + time_stamp + "+05:30"
+				t2, _ := time.Parse(time.RFC3339Nano, time_stamp)
+
+				if loki_log_time == 0 {
+					t2 = time.Now()
+				}
+
+				line = "{" + "\"streams\":[{\"stream\": {\"job\":\"fuse\",\"info\":\""
+				line = line + fmt.Sprint("", strings.TrimSpace(info)) + "\",\"api_name\":\""
+				line = line + fmt.Sprint("", strings.TrimSpace(api_name)) + "\"},\"values\":[[\""
+				line = line + fmt.Sprint("", t2.UnixNano()) + "\", \""
+				line = line + fmt.Sprint("", log_line) + "\"] ] } ]}"
+
+				//fmt.Println(line) //{"streams":[{"stream": {"job":"fuse","info":"INFO","api_name":"Ctx_ESB_GetAccountBalanceForUPI"},"values":[["1689137962849392366", "Jun 21 10:00:01 app6_28 child35_fuse | 2023-06-21 09:59:53,387 | INFO  | Ctx_ESB_GetAccountBalanceForUPI | estlet-170806749 | asynclog                         | 205 - org.apache.camel.camel-core - 2.15.1.redhat-621107 | X-Correlation-Id_IBLb603e71aed6543a0a11dae55a32e8209 | UserId_ | ESB_GetAccountBalanceForUPI Request Received From USER_{\"accountNo\":\"20268321246\", \"MobileNo\":\"918349954902\", \"TxnId\":\"\"}"] ] } ]}
+
+				//line = "{\"streams\":[{\"stream\": {\"job\":\"fuse\",\"info\":\"INFO\",\"api_name\":\"Ctx_ESB_GetAccountBalanceForUPI\"},\"values\":[[\"1689139304647881930\", \"560\"] ] } ]}"
+
+				var jsonStr = []byte(line)
+				responseBody := bytes.NewBuffer(jsonStr)
+				//http.Post("http://192.168.146.150:3100/loki/api/v1/push", "application/json", responseBody)
+
+				resp, err := http.Post(lokiIP, "application/json", responseBody)
+
+				// resp, err := http.Post("http://192.168.146.150:3100/loki/api/v1/push", "application/json", responseBody)
+
+				//Handle Error
+				if err != nil {
+					loki_yes = 0
+					//log.Fatalf("An Error Occured %v", err)
+					fmt.Println(err)
+				}
+
+				//defer resp.Body.Close()
+
+				if err == nil {
+					defer resp.Body.Close()
+				}
+
+				// body, _ := io.ReadAll(resp.Body)
+				// if len(body) > 0 {
+				// 	fmt.Println("response Body:", string(body))
+				// }
+			}
+		}
+	}
+	/////
+
+	return
+
+}
+
+//////////////////////////////////////////////////
+
+func sub2(flag int, xcorelation map[int][]string, s_r map[int][]int, t_stamp map[int][]string) {
+	var i, j, k int
+	var test, response_time float64
+	var apiName string
+	k = flag
+
+	apiName = apiDetails[flag][0]
+
+	for i = 0; i < len(xcorelation[k]); i++ {
+		for j = i + 1; j < len(xcorelation[k]); j++ {
+			if xcorelation[k][i] == xcorelation[k][j] {
+
+				if s_r[k][i] == 0 {
+
+					if len(t_stamp[k][i]) < 12|len(t_stamp[k][j]) {
+						break
+					}
+
+					t1, _ := time.Parse(time.RFC3339Nano, t_stamp[k][i])
+					t2, _ := time.Parse(time.RFC3339Nano, t_stamp[k][j]) //2023-03-25T20:21:06.958+05:30"
+					t_diff := t2.Sub(t1)
+
+					test = float64(t_diff.Milliseconds())
+
+					if test < 0 {
+						test = test * (-1)
+					}
+
+					response_time = test
+
+					////////////// Inserting data to prometheus //////////////////////
+					if promo_yes == 1 {
+						prom_value[flag][0] = response_time
+						if promo_log_time == 1 {
+							prom_time_value[flag][0] = t1
+						}
+						if promo_log_time == 0 {
+							prom_time_value[flag][0] = time.Now()
+						}
+						//////////
+
+					}
+					//////////////// Inserting data into influxdb  //////////////////////////////////////////////////
+
+					if influxDb_yes == 1 {
+						influx_ins(apiName, xcorelation[k][i], t1, response_time)
+					}
+
+					//////////// clickhouse ////
+					if clickhouse_yes == 1 {
+						insClickhouse(t2, apiName, xcorelation[k][i], response_time)
+					}
+					//////////////////////
+					///// Inserting data into elastic Search  ///
+					if elastic_yes == 1 {
+						elasticIns(t_stamp[k][i], apiName, xcorelation[k][i], response_time)
+					}
+					//////////////////////////////////////////////////////////////
+					if response_time > higherValue {
+
+						fmt.Println(apiName, xcorelation[k][i], t_stamp[k][j]+"-"+t_stamp[k][i], t_stamp[k][i], response_time)
+					}
+					////////////////////////////////////////////////
+
+					/////////////////////////////////////////////
+
+				} else {
+
+					t1, _ := time.Parse(time.RFC3339Nano, t_stamp[k][i])
+					t2, _ := time.Parse(time.RFC3339Nano, t_stamp[k][j])
+					t_diff := t1.Sub(t2)
+
+					test = float64(t_diff.Milliseconds())
+
+					if test < 0 {
+						test = test * (-1)
+					}
+
+					response_time = test
+
+					// //////////// Inserting data to prometheus ///////////////////////////////////////
+
+					if promo_yes == 1 {
+						prom_value[flag][0] = response_time
+						if promo_log_time == 1 {
+							prom_time_value[flag][0] = t1
+						}
+						if promo_log_time == 0 {
+							prom_time_value[flag][0] = time.Now()
+						}
+						//////////
+
+					}
+					//////// Inserting data into InfluxDB ////////////////
+					if influxDb_yes == 1 {
+						influx_ins(apiName, xcorelation[k][i], t2, response_time)
+					}
+					//////////// clickhouse ////
+					if clickhouse_yes == 1 {
+						insClickhouse(t2, apiName, xcorelation[k][i], response_time)
+					}
+					///// Inserting data into elastic Search  ///
+					if elastic_yes == 1 {
+						elasticIns(t_stamp[k][j], apiName, xcorelation[k][i], response_time)
+					}
+					//////////////////////
+
+					if response_time > higherValue {
+
+						fmt.Println(apiName, xcorelation[k][i], t_stamp[k][j]+"-"+t_stamp[k][i], t_stamp[k][i], response_time)
+					}
+
+					////////////////////////////////////////////////
+
+					///////////////////////////////////////////////
+				}
+
+				xcorelation[k] = append(xcorelation[k][:i], xcorelation[k][i+1:]...)
+				xcorelation[k] = append(xcorelation[k][:j-1], xcorelation[k][j-1+1:]...)
+				s_r[k] = append(s_r[k][:i], s_r[k][i+1:]...)
+				s_r[k] = append(s_r[k][:j-1], s_r[k][j-1+1:]...)
+				t_stamp[k] = append(t_stamp[k][:i], t_stamp[k][i+1:]...)
+				t_stamp[k] = append(t_stamp[k][:j-1], t_stamp[k][j-1+1:]...)
+
+			}
+		}
+	}
+
+}
+
+// ///////////////////////////////////////////
+
+func influxInit() {
+	// Create a new client using an InfluxDB server base URL and an authentication token
+	//client := influxdb2.NewClient("http://192.168.146.150:8086", myToken)
+	//var influx_client influxdb2.Client
+	//var influx_writeAPI api.WriteAPIBlocking
+
+	influx_client = influxdb2.NewClient(influxdbIP, myToken)
+	//abcd := influx_client.WriteAPIBlocking(myOrg, myBucket)
+	//influx_writeAPI=abcd
+	// Use blocking write client for writes to desired bucket
+	// myOrg = "techvizon"
+	// myBucket = "test"
+	//influx_writeAPI := influx_client.WriteAPIBlocking(myOrg, myBucket)
+}
+
+// ///////////////
+func influx_ins(s string, xid string, t time.Time, test float64) {
+
+	// // Create a new client using an InfluxDB server base URL and an authentication token
+	// //client := influxdb2.NewClient("http://192.168.146.150:8086", myToken)
+
+	// var influx_client influxdb2.Client
+	// var influx_writeAPI api.WriteAPIBlocking
+	// client := influxdb2.NewClient(influxdbIP, myToken)
+
+	// // Use blocking write client for writes to desired bucket
+	// // myOrg = "techvizon"
+	// // myBucket = "test"
+	// writeAPI := client.WriteAPIBlocking(myOrg, myBucket)
+	//writeAPI = writeAPI
+	///////////////////////////////
+
+	// 3.  Or write directly line protocol
+	//line := fmt.Sprintf("stat,unit=%s rtime=%f,xid=%s", s, test, xid)
+	//ToRfc3339String()
+
+	//line := fmt.Sprintf("stat1,unit=%s,xid=%s rtime=%f %d", s, xid, test, t.UnixNano())
+	//line := fmt.Sprintf("stat1,unit=%s,xid=%s rtime=%f", s, xid, test)
+
+	/////// for inserting at current time stamp  //
+
+	// if influxDb_log_time == 0 {
+	// 	line := fmt.Sprintf("stat1,unit=%s rtime=%f", s, test)
+	// 	writeAPI.WriteRecord(context.Background(), line)
+	// }
+	// if influxDb_log_time == 1 {
+	// 	line := fmt.Sprintf("stat1,unit=%s rtime=%f %d", s, test, t.UnixNano())
+	// 	//// writing in InfluxDB  ///
+	// 	writeAPI.WriteRecord(context.Background(), line)
+	// }
+
+	influx_writeAPI := influx_client.WriteAPIBlocking(myOrg, myBucket)
+	if influxDb_log_time == 0 {
+		line := fmt.Sprintf("%s,unit=%s %s=%f", _measurment, s, _field, test)
+		influx_writeAPI.WriteRecord(context.Background(), line)
+	}
+
+	// for inserting at log line time stamp /////
+	if influxDb_log_time == 1 {
+		line := fmt.Sprintf("%s,unit=%s %s=%f %d", _measurment, s, _field, test, t.UnixNano())
+		//// writing in InfluxDB  ///
+		influx_writeAPI.WriteRecord(context.Background(), line)
+	}
+}
+
+////////////////////////////////
+///////// clickhouse section /////
+//https://pkg.go.dev/github.com/ClickHouse/clickhouse-go#section-readme
+
+func clickhouseInit() {
+	/////////////////////
+
+	var err error
+	//clickhouse_IP, clickhouse_Database, clickhouse_table string
+	clickhouse_IP = clickhouse_IP + "?debug=false"
+	//connect, err = sql.Open("clickhouse", "tcp://192.168.146.151:9050?debug=false")
+	clickhouse_connect, err = sql.Open("clickhouse", clickhouse_IP)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := clickhouse_connect.Ping(); err != nil {
+		if exception, ok := err.(*clickhouse.Exception); ok {
+			fmt.Printf("[%d] %s \n%s\n", exception.Code, exception.Message, exception.StackTrace)
+		} else {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	////////////////////////////////////
+
+	//_, err = connect.Exec(`create database fino`)
+	s := "create database " + clickhouse_Database
+	_, err = clickhouse_connect.Exec(s)
+	if err != nil {
+		fmt.Println(err)
+	}
+	///////////////////////
+
+	//////////////////////////
+	//create database fino
+	///////////////////////
+
+	// _, err = connect.Exec(`
+	// CREATE TABLE fino.rtime
+	// (
+	// 	timestamp DateTime,
+	// 	api String,
+	//  xid string
+	// 	metric Float32
+
+	// 	)
+	// ENGINE = MergeTree()
+	// PRIMARY KEY (timestamp)
+	// `)
+
+	_, err = clickhouse_connect.Exec(
+		"CREATE TABLE " + clickhouse_Database + "." + clickhouse_table + "(timestamp DateTime('Asia/Calcutta'),api String,x String,metric Float32)" + "ENGINE = MergeTree()" + "PRIMARY KEY (timestamp)")
+
+	if err != nil {
+		fmt.Println(err)
+	}
+	//////////////////////////////////////////////
+
+}
+
+func insClickhouse(t time.Time, apiName string, x string, rtime float64) {
+
+	// var (
+	// 	tx, _   = connect.Begin()
+	// 	stmt, _ = tx.Prepare("INSERT INTO fino.rtime (timestamp,api,xid,metric) VALUES (?, ?, ?,?)")
+	// )
+
+	var (
+		tx, _   = clickhouse_connect.Begin()
+		stmt, _ = tx.Prepare("INSERT INTO " + clickhouse_Database + "." + clickhouse_table + "(timestamp,api,x,metric) VALUES (?, ?, ?,?)")
+	)
+
+	defer stmt.Close()
+
+	if clickhouse_log_time == 0 {
+		t = time.Now()
+	}
+	_, err := stmt.Exec(t, apiName, x, rtime)
+
+	//_, err := stmt.Exec(time.Now(), apiName, xid, rtime)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err1 := tx.Commit()
+
+	if err1 != nil {
+		fmt.Println(err1)
+	}
+
+}
+
+// //////////////////////////////////////
+func elasticInit() {
+
+	///  curl -XDELETE http://localhost:9200/rtime
+	var err error
+	// Create a context object for the API calls
+	elastic_ctx = context.Background()
+	cfg := elasticsearch.Config{
+		Addresses: []string{
+			elastic_IP,
+		},
+		Username: "",
+		Password: "",
+	}
+
+	elastic_client, err = elasticsearch.NewClient(cfg)
+
+	if err != nil {
+		fmt.Println("Elasticsearch connection error:", err)
+	}
+
+	// Have the client instance return a response
+	res, err := elastic_client.Info()
+
+	// Deserialize the response into a map.
+	if err != nil {
+		//log.Fatalf("client.Info() ERROR:", err)
+		fmt.Println("client.Info() ERROR:", err)
+	} else {
+		//log.Printf("client response:", res)
+		fmt.Println("client response:", res)
+	}
+
+	///////////////////////
+}
+
+func elasticIns(t string, apiName string, x string, rtime float64) {
+
+	var line string
+
+	if elastic_log_time == 0 {
+		t = (time.Now()).String()
+		t1 := strings.Split(t, " ")
+		t = t1[0] + "T"
+		t = t + t1[1] + "+05:30"
+	}
+	//2023-07-11 18:09:32.794767317
+	//"@timestamp": "2023-05-12T07:05:37.412939761Z"
+
+	// line = "{" + "\"job\":\"fuse\",\"api_name\":\""
+	// line = line + fmt.Sprint(apiName) + "\","
+	// line = line + "\"rtime\":" + fmt.Sprint(rtime) + ","
+	// line = line + "\"@timestamp\":\"" + fmt.Sprint(t) + "\"}"
+
+	line = "{" + "\"job\":\"fuse\",\"api_name\":\""
+	line = line + fmt.Sprint(apiName) + "\","
+	line = line + "\"xid\":\"" + fmt.Sprint(x) + "\","
+	line = line + "\"rtime\":" + fmt.Sprint(rtime) + ","
+	line = line + "\"@timestamp\":\"" + fmt.Sprint(t) + "\"}"
+
+	//fmt.Println(line)
+
+	// var jsonStr = []byte(line)
+	// responseBody := bytes.NewBuffer(jsonStr)
+	// fmt.Println(reflect.TypeOf(responseBody))
+	/////////////////////
+
+	// Instantiate a request object
+	req := esapi.IndexRequest{
+		Index:      elastic_Database,
+		DocumentID: fmt.Sprintf("%d", time.Now()),
+		Body:       strings.NewReader(line),
+		Refresh:    "true",
+	}
+	//fmt.Println(reflect.TypeOf(req))
+
+	////////////////
+	// Return an API response object from request
+	res1, err := req.Do(elastic_ctx, elastic_client)
+	if err != nil {
+		fmt.Printf("IndexRequest ERROR: %s\n", err)
+		//log.Fatalf("IndexRequest ERROR: %s", err)
+	}
+	defer res1.Body.Close()
+
+	if res1.IsError() {
+		log.Printf("%s ERROR indexing document ID=%d", res1.Status(), 1)
+	} else {
+
+		// Deserialize the response into a map.
+		var resMap map[string]interface{}
+		if err := json.NewDecoder(res1.Body).Decode(&resMap); err != nil {
+			fmt.Printf("Error parsing the response body: %s\n", err)
+
+		} else {
+			//log.Printf("\nIndexRequest() RESPONSE:")
+			// Print the response status and indexed document version.
+			// fmt.Println("Status:", res1.Status())
+			// fmt.Println("Result:", resMap["result"])
+			// fmt.Println("Version:", int(resMap["_version"].(float64)))
+			// fmt.Println("resMap:", resMap)
+			// fmt.Println("\n")
+		}
+	}
+
+	/////////////////////////
+
+}
+
+// ///////////////////////////
+///// End of main code  ///////////////////////////////
+// rows, err := connect.Query("SELECT country_code, os_id, browser_id, categories, action_day, action_time FROM anoop.example")
+// if err != nil {
+// 	log.Fatal(err)
+// }
+// defer rows.Close()
+
+// for rows.Next() {
+// 	var (
+// 		country               string
+// 		os, browser           uint8
+// 		categories            []int16
+// 		actionDay, actionTime time.Time
+// 	)
+// 	if err := rows.Scan(&country, &os, &browser, &categories, &actionDay, &actionTime); err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	log.Printf("country: %s, os: %d, browser: %d, categories: %v, action_day: %s, action_time: %s", country, os, browser, categories, actionDay, actionTime)
+// }
+
+// if err := rows.Err(); err != nil {
+// 	log.Fatal(err)
+// }
+
+// if _, err := connect.Exec("DROP TABLE example"); err != nil {
+// 	log.Fatal(err)
+// }
+
+////////////////////////////////
+// func recordMetrics2(prom_newgauge map[int][]prometheus.Gauge) {
+// 	go func() {
+// 		for {
+
+// 			for i := 0; i < len(prom_newgauge); i++ {
+// 				prom_newgauge[i][0].Set(prom_value[i][0])
+
+// 			}
+
+// 		}
+// 	}()
+// }
+
+//////////////////////
+
+// func dayTime1(x string) (flag int, xid string, sent_recive int, time_stamp string) {
+
+// 	flag = 4
+// 	xid = ""
+// 	sent_recive = 3
+// 	time_stamp = ""
+// 	str := x
+
+// 	//var regexStrUPISendMoney string = "(?P<n1>Ctx_ESB_UPISendMoney)"
+// 	//var regexStrFindCustomerByAccNoUPI_NEW string = "(?P<n4>Ctx_ESB_FindCustomerByAccNoUPI_NEW)"
+
+// 	var regexUPISendMoney_sent string = "(?P<n1>ESB_UPISendMoney REQUEST sent to CBS)"
+// 	var regexFindCustomerByAccNoUPI_NEW_sent string = "(?P<n2>ESB_FindCustomerByAccNoUPI_NEW Request sent to CBS to get details from account)"
+
+// 	var UPISendMoney_Received string = "(?P<n3>ESB_UPISendMoney Response Received from CBS)"
+// 	var FindCustomerByAccNoUPI_NEW_Received string = "(?P<n4>ESB_FindCustomerByAccNoUPI_NEW Response Received from CBS to get details from account)"
+
+// 	var regexUPIUserAuthProfile_sent string = "(?P<n5>ESB_UPIUserAuthProfile REQUEST SENT TO CBS)"
+// 	var UPIUserAuthProfile_Received string = "(?P<n6>ESB_UPIUserAuthProfile RESPONSE RECEIVED FROM CBS)"
+
+// 	var regexESB_PostTransactionReversalForUPI_sent string = "(?P<n7>ESB_PostTransactionReversalForUPI REQUEST SENT TO CBS)"
+// 	var ESB_PostTransactionReversalForUPI_Received string = "(?P<n8>ESB_PostTransactionReversalForUPI RESPONSE RECEIVED FROM CBS)"
+
+// 	///////////////////////////////////////////////////////
+// 	var re = regexp.MustCompile(regexStr)
+
+// 	matchUPISendMoney_sent := (regexp.MustCompile(regexUPISendMoney_sent)).FindStringSubmatch(str)
+// 	matchFindCustomerByAccNoUPI_NEW_sent := (regexp.MustCompile(regexFindCustomerByAccNoUPI_NEW_sent)).FindStringSubmatch(str)
+// 	matchUPISendMoney_Received := regexp.MustCompile(UPISendMoney_Received).FindStringSubmatch(str)
+// 	matchFindCustomerByAccNoUPI_NEW_Received := (regexp.MustCompile(FindCustomerByAccNoUPI_NEW_Received)).FindStringSubmatch(str)
+
+// 	matchUPIUserAuthProfile_sent := (regexp.MustCompile(regexUPIUserAuthProfile_sent)).FindStringSubmatch(str)
+// 	matchUPIUserAuthProfile_Received := regexp.MustCompile(UPIUserAuthProfile_Received).FindStringSubmatch(str)
+
+// 	matchESB_PostTransactionReversalForUPI_sent := (regexp.MustCompile(regexESB_PostTransactionReversalForUPI_sent)).FindStringSubmatch(str)
+// 	matchESB_PostTransactionReversalForUPI_Received := regexp.MustCompile(ESB_PostTransactionReversalForUPI_Received).FindStringSubmatch(str)
+
+// 	///////////////////////////////////////////////////////////////////////
+
+// 	if matchUPISendMoney_sent != nil {
+// 		flag = 0
+// 		sent_recive = 0 // request sent to CBS
+// 	}
+// 	if matchUPISendMoney_Received != nil {
+// 		flag = 0
+// 		sent_recive = 1 // Response received from CBS
+// 	}
+// 	/////////////////////////////////////
+// 	if matchFindCustomerByAccNoUPI_NEW_sent != nil {
+// 		flag = 1
+// 		sent_recive = 0 // request sent to CBS
+// 	}
+// 	if matchFindCustomerByAccNoUPI_NEW_Received != nil {
+// 		flag = 1
+// 		sent_recive = 1 // Response received from CBS
+// 	}
+// 	/////////////////////////////////////////
+// 	if matchUPIUserAuthProfile_sent != nil {
+// 		flag = 2
+// 		sent_recive = 0 // request sent to CBS
+// 	}
+// 	if matchUPIUserAuthProfile_Received != nil {
+// 		flag = 2
+// 		sent_recive = 1 // Response received from CBS
+// 	}
+// 	///////////////////////////////////
+// 	if matchESB_PostTransactionReversalForUPI_sent != nil {
+// 		flag = 3
+// 		sent_recive = 0 // request sent to CBS
+// 	}
+// 	if matchESB_PostTransactionReversalForUPI_Received != nil {
+// 		flag = 3
+// 		sent_recive = 1 // Response received from CBS
+// 	}
+// 	///////////////////////////////////
+
+// 	if flag != 4 {
+// 		match := re.FindStringSubmatch(str)
+// 		if len(match) > 9 && len(match[3]) == 8 {
+// 			if len(match[4]) == 4 {
+// 				xid = match[10]
+// 				time_stamp = match[3]
+// 				time_stamp = time_stamp + "." + match[4][:len(match[4])-1]
+
+// 				//////////////////////// "2006-01-02T15:04:05.999999999Z07:00"
+
+// 				time_stamp = match[2] + "T" + time_stamp + "+05:30"
+
+// 			}
+// 		} else {
+// 			flag = 4
+// 		}
+
+// 	}
+
+// 	return
+
+// }
+
+// ///////////////////////////////////////////////
+
+// // ////////////////////////////////////////
+
+// func sub1(apiName string, xcorelation *[]string, s_r *[]int, t_stamp *[]string, response_time float64, response_time_h float64, higherValue float64) {
+
+// 	var i, j int
+// 	var test float64
+
+// 	for i = 0; i < len(*xcorelation); i++ {
+// 		for j = i + 1; j < len(*xcorelation); j++ {
+// 			if (*xcorelation)[i] == (*xcorelation)[j] {
+
+// 				if (*s_r)[i] == 0 {
+
+// 					if len((*t_stamp)[i]) < 12|len((*t_stamp)[j]) {
+// 						break
+// 					}
+
+// 					t1, _ := time.Parse(time.RFC3339Nano, (*t_stamp)[i])
+// 					t2, _ := time.Parse(time.RFC3339Nano, (*t_stamp)[j]) //2023-03-25T20:21:06.958+05:30"
+// 					t_diff := t2.Sub(t1)
+
+// 					test = float64(t_diff.Milliseconds())
+
+// 					if test < 0 {
+// 						test = test * (-1)
+// 					}
+// 					if test > 5000 {
+// 						test = 5001
+// 						if (*xcorelation)[i] == "Inbound" {
+// 							break
+// 						}
+// 						if (*xcorelation)[i] == "Outbound" {
+// 							break
+// 						}
+// 					}
+// 					response_time = test
+
+// 					//////////////// Incerting data into influxdb  //////////////////////////////////////////////////
+
+// 					influx_ins(apiName, (*xcorelation)[i], t1, test)
+// 					//////////////////////////////////////////////////////////////
+// 					if response_time > higherValue {
+// 						response_time_h = response_time
+// 						fmt.Println(apiName, (*xcorelation)[i], (*t_stamp)[j]+"-"+(*t_stamp)[i], (*t_stamp)[i], response_time)
+// 					}
+// 					////////////////////////////////////////////////
+
+// 					/////////////////////////////////////////////
+
+// 				} else {
+
+// 					t1, _ := time.Parse(time.RFC3339Nano, (*t_stamp)[i])
+// 					t2, _ := time.Parse(time.RFC3339Nano, (*t_stamp)[j])
+// 					t_diff := t1.Sub(t2)
+
+// 					test = float64(t_diff.Milliseconds())
+
+// 					if test < 0 {
+// 						test = test * (-1)
+// 					}
+
+// 					if test > 5000 {
+// 						test = 5001
+// 						if (*xcorelation)[i] == "Inbound" {
+// 							break
+// 						}
+// 						if (*xcorelation)[i] == "Outbound" {
+// 							break
+// 						}
+// 					}
+
+// 					response_time = test
+
+// 					influx_ins(apiName, (*xcorelation)[i], t2, test)
+
+// 					if response_time > higherValue {
+// 						response_time_h = response_time
+// 						fmt.Println(apiName, (*xcorelation)[i], (*t_stamp)[j]+"-"+(*t_stamp)[i], (*t_stamp)[i], response_time)
+// 					}
+
+// 					////////////////////////////////////////////////
+
+// 					/////////////////////////////////////////////
+// 				}
+
+// 				*xcorelation = append((*xcorelation)[:i], (*xcorelation)[i+1:]...)
+// 				*xcorelation = append((*xcorelation)[:j-1], (*xcorelation)[j-1+1:]...)
+// 				*s_r = append((*s_r)[:i], (*s_r)[i+1:]...)
+// 				*s_r = append((*s_r)[:j-1], (*s_r)[j-1+1:]...)
+// 				*t_stamp = append((*t_stamp)[:i], (*t_stamp)[i+1:]...)
+// 				*t_stamp = append((*t_stamp)[:j-1], (*t_stamp)[j-1+1:]...)
+
+// 			}
+// 		}
+// 	}
+// }
+
+// //////////////////////////////////////
+
+// //////////////////
+// func month1(month string) (m string) {
+
+// 	//var m string
+
+// 	if month == "Jan" {
+// 		m = "01"
+// 	} else if month == "Feb" {
+// 		m = "02"
+// 	} else if month == "Mar" {
+// 		m = "03"
+// 	} else if month == "Apr" {
+// 		m = "04"
+// 	} else if month == "May" {
+// 		m = "05"
+// 	} else if month == "Jun" {
+// 		m = "06"
+// 	} else if month == "Jul" {
+// 		m = "07"
+// 	} else if month == "Aug" {
+// 		m = "08"
+// 	} else if month == "Sep" {
+// 		m = "09"
+// 	} else if month == "Oct" {
+// 		m = "10"
+// 	} else if month == "Nov" {
+// 		m = "11"
+// 	} else if month == "Dec" {
+// 		m = "12"
+// 	}
+// 	return m
+// }
+
+///////////////////////////
+
+// const (
+// // myToken  = "N7uCE8bVdDIPRgNToPjwFFWev6PPGlZCWjI1C9RUEI8xO8MdiNUDAQSD_nO6kJPSEKfgINtbG6W0Iw5Rmvz9dA=="
+// // myOrg    = "anoop"
+// // myBucket = "test"
+// // http://192.168.146.135:8086/
+// // login anoop
+// // password anoopkumar
+
+// // ////////////////
+// //
+// //	influxdb on docker 192.168.146.150
+// //
+// // myToken  = "w7SxA2EisbUiRpv8q7guEPaimox7ph4oWRyIraElWAEsnbosOy1tjIiuHt66-z8Fgar2ggkkFE-S33blH4gd_w=="
+// // myOrg    = "techvizon"
+// // myBucket = "test"
+// // http://192.168.146.150:8086/
+// // login anoop
+// // password anoopkumar
+// )
+
+//////////////////////
+
+/////////////////
+// from(bucket: "test")
+//   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+//   |> filter(fn: (r) => r["_measurement"] == "stat")
+//   |> filter(fn: (r) => r["_field"] == "rtime")
+//   |> filter(fn: (r) => r["unit"] == "sendMoney" or r["unit"] == "FindCustomerByAccNoUPI_NEW")
