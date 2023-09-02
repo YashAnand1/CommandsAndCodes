@@ -18,7 +18,7 @@ var (
 	// 	// // File paths
 	etcdHost = "localhost:2379"
 	// excelFile = "/home/user/yes1/etcd-inventory/etcd.xlsx"
-	csvFile = "/home/user/yes1/etcd-inventory/myetcd.csv"
+	csvFile = "/home/user/yes1/yes1/etcd-inventory/myetcd.csv"
 )
 
 func fetchDataFromAPI() (string, error) { //returns string and error

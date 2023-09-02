@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,7 @@ var create = &cobra.Command{
 
 		if resp.StatusCode == 200 {
 			// fmt.Printf("Key: %s is netered as %s succesfully", "servers/Physical/10.246.40.139/Hostname", "vahanapp00")
-			fmt.Printf("Key: %s has been metered as %s succesfully\n", etcdKey, string(etcdValue))
+			fmt.Printf("Key: %s has been metered as %s succesfully\n", strings.ToUpper(etcdKey), strings.ToUpper(etcdValue))
 		}
 		/////
 		// }
