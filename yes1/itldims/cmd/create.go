@@ -14,7 +14,7 @@ var create = &cobra.Command{
 	Short: "Create and upload data to etcd",
 	// Args:  cobra.ExactArgs(2), //
 	Run: func(cmd *cobra.Command, args []string) {
-		uploadToEtcd()
+		// uploadToEtcd()
 		// ////  anoop new post function  ///////
 		// var key1 string
 		// var numberof_key int
@@ -36,8 +36,8 @@ var create = &cobra.Command{
 		line := "{" + "\"EtcdKey\"" + ":" + "\"" + etcdKey + "\","     //added user arg 1
 		line = line + "\"EtcdValue\"" + ":" + "\"" + etcdValue + "\"}" //added user arg 2
 
-		fmt.Println(line)
-		fmt.Println(url)
+		// fmt.Println(line)
+		// fmt.Println(url)
 		var jsonStr = []byte(line)
 		responseBody := bytes.NewBuffer(jsonStr)
 		resp, err := http.Post(url, "application/json", responseBody)
@@ -50,7 +50,9 @@ var create = &cobra.Command{
 
 		if resp.StatusCode == 200 {
 			// fmt.Printf("Key: %s is netered as %s succesfully", "servers/Physical/10.246.40.139/Hostname", "vahanapp00")
-			fmt.Printf("Key: %s has been metered as %s succesfully\n", strings.ToUpper(etcdKey), strings.ToUpper(etcdValue))
+			fmt.Printf("Key: %s | Value: %s created succesfully!\n", strings.ToUpper(etcdKey), strings.ToUpper(etcdValue))
+		} else {
+			fmt.Printf("Could not post the key-value pair.")
 		}
 		/////
 		// }
