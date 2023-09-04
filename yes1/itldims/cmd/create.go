@@ -14,7 +14,7 @@ var create = &cobra.Command{
 	Short: "Create and upload data to etcd",
 	// Args:  cobra.ExactArgs(2), //
 	Run: func(cmd *cobra.Command, args []string) {
-		uploadToEtcd()
+		// uploadToEtcd()
 		// ////  anoop new post function  ///////
 		// var key1 string
 		// var numberof_key int
@@ -29,7 +29,7 @@ var create = &cobra.Command{
 		// //removed if numberof_key == 5 as key and value are now 2 diff. args
 		// if numberof_key == 5 { // 5th is the value
 
-		var url string = "http://localhost:8181/" + "servers/Anoop"
+		var url string = "http://192.168.122.128:8181/" + "servers/Anoop"
 		etcdKey := key
 		etcdValue := value
 

@@ -14,7 +14,7 @@ var (
 		Short: "Interact with the etcd API",
 		Long:  "A command-line tool to interact with the etcd API and check connection",
 		Run: func(cmd *cobra.Command, args []string) { // in slice of string args, user input stored, cmd holds info on how things to be executed
-			response, err := http.Get("http://localhost:8181/servers/") //we always get back 2: err and response
+			response, err := http.Get("http://192.168.122.128:8181/servers/") //we always get back 2: err and response
 			if err != nil {
 				fmt.Printf("\n\n ------: Failed to connect to the etcd API at http://localhost:8181/servers/:-------\n\n\n\n\n")
 			}

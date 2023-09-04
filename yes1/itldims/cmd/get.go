@@ -80,7 +80,7 @@ var get = &cobra.Command{ // Cobra command is 'get'
 		// ////  anoop new post function  ///////
 		// if numberof_key == 5 {
 
-		// 	var url string = "http://localhost:8181/" + "servers/Anoop"
+		// 	var url string = "http://192.168.122.128:8181/" + "servers/Anoop"
 		// 	////////////////////////
 
 		// 	//create/post code for posting data of value to key
@@ -118,7 +118,7 @@ var get = &cobra.Command{ // Cobra command is 'get'
 		// delete
 
 		if numberof_key == 6 {
-			var url string = "http://localhost:8181/" + "servers/delete"
+			var url string = "http://192.168.122.128:8181/" + "servers/delete"
 			////////////////////////
 
 			var line string = "{" + "\"EtcdKey\"" + ":" + "\"/servers/Physical/10.246.40.139/Hostname\"" + "}"
