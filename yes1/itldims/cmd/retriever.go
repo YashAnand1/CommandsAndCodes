@@ -1,25 +1,18 @@
 package cmd
 
 import (
-	"context"
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io" // i/o operations
-	"log"
 	"net/http"
-	"os"
 	"strings"
-
-	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-var (
-	// 	// // File paths
-	etcdHost = "localhost:2379"
-	// excelFile = "/home/user/yes1/etcd-inventory/etcd.xlsx"
-	csvFile = "/home/user/yes1/yes1/etcd-inventory/myetcd.csv"
-)
+// var (
+// 	// // // File paths
+// 	etcdHost = "localhost:2379"
+// 	// excelFile = "/home/user/yes1/etcd-inventory/etcd.xlsx"
+// 	csvFile = "/home/user/yes1/yes1/etcd-inventory/myetcd.csv"
+// )
 
 func fetchDataFromAPI() (string, error) { //returns string and error
 	fmt.Println("in fetchDataFromAPI")
@@ -28,7 +21,7 @@ func fetchDataFromAPI() (string, error) { //returns string and error
 
 	////////////////////////
 
-	response, err := http.Get("http://localhost:8181/servers/") //Get request sent to the API URL for fetching data
+	response, err := http.Get("http://192.168.122.128:8181/servers/") //Get request sent to the API URL for fetching data
 	if err != nil {
 		fmt.Printf("%s", err)
 	}
@@ -45,7 +38,7 @@ func fetchDataFromAPI() (string, error) { //returns string and error
 func fetchDataFromAPIWithKey(key string) (string, error) { //returns string and error
 	fmt.Println("in fetchDataFromAPIwithKey")
 	//////////////////////////////
-	var url string = "http://localhost:8181/" + key
+	var url string = "http://192.168.122.128:8181/" + key
 	////////////////////////
 
 	//https://www.soberkoder.com/consume-rest-api-go/
@@ -88,72 +81,72 @@ func parseKeyValuePairs(data string) map[string]string { //string as input and r
 	return result
 }
 
-func uploadToEtcd() {
-	// Connect to etcd
-	log.Println("Entered into function")
-	etcdClient, err := clientv3.New(clientv3.Config{
-		Endpoints: []string{etcdHost},
-	})
-	if err != nil {
-		log.Fatalf("Failed to connect to etcd: %v", err)
-	}
-	defer etcdClient.Close()
+// func uploadToEtcd() {
+// 	// Connect to etcd
+// 	log.Println("Entered into function")
+// 	etcdClient, err := clientv3.New(clientv3.Config{
+// 		Endpoints: []string{etcdHost},
+// 	})
+// 	if err != nil {
+// 		log.Fatalf("Failed to connect to etcd: %v", err)
+// 	}
+// 	defer etcdClient.Close()
 
-	// Read the CSV file
-	file, err := os.Open(csvFile)
-	log.Println("reading file")
-	if err != nil {
-		log.Fatalf("Failed to open CSV file: %v", err)
-	}
-	defer file.Close()
+// 	// Read the CSV file
+// 	file, err := os.Open(csvFile)
+// 	log.Println("reading file")
+// 	if err != nil {
+// 		log.Fatalf("Failed to open CSV file: %v", err)
+// 	}
+// 	defer file.Close()
 
-	// Parse the CSV file
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
-	if err != nil {
-		log.Fatalf("Failed to read CSV file: %v", err)
-	}
+// 	// Parse the CSV file
+// 	reader := csv.NewReader(file)
+// 	records, err := reader.ReadAll()
+// 	if err != nil {
+// 		log.Fatalf("Failed to read CSV file: %v", err)
+// 	}
 
-	// Iterate over the records and upload to etcd
-	headers := records[0]
-	type ServerData map[string]string
+// 	// Iterate over the records and upload to etcd
+// 	headers := records[0]
+// 	type ServerData map[string]string
 
-	for _, record := range records[1:] {
-		serverIP := record[0]
-		serverType := record[1]
-		serverData := make(ServerData)
+// 	for _, record := range records[1:] {
+// 		serverIP := record[0]
+// 		serverType := record[1]
+// 		serverData := make(ServerData)
 
-		// Create server data dictionary
-		for i := 2; i < len(headers); i++ {
-			header := headers[i]
-			value := record[i]
-			serverData[header] = value
-		}
+// 		// Create server data dictionary
+// 		for i := 2; i < len(headers); i++ {
+// 			header := headers[i]
+// 			value := record[i]
+// 			serverData[header] = value
+// 		}
 
-		// Set key-value pairs in etcd for each data field
-		for header, value := range serverData {
-			etcdKey := fmt.Sprintf("/servers/%s/%s/%s", serverType, serverIP, header)
-			etcdValue := value
-			// fmt.Println(etcdKey)
-			// fmt.Println(etcdValue)
-			_, err := etcdClient.Put(context.Background(), etcdKey, etcdValue)
-			if err != nil {
-				log.Printf("Failed to upload key-value to etcd: %v", err)
-			}
-		}
+// 		// Set key-value pairs in etcd for each data field
+// 		for header, value := range serverData {
+// 			etcdKey := fmt.Sprintf("/servers/%s/%s/%s", serverType, serverIP, header)
+// 			etcdValue := value
+// 			// fmt.Println(etcdKey)
+// 			// fmt.Println(etcdValue)
+// 			_, err := etcdClient.Put(context.Background(), etcdKey, etcdValue)
+// 			if err != nil {
+// 				log.Printf("Failed to upload key-value to etcd: %v", err)
+// 			}
+// 		}
 
-		// Set key-value pair for server data
-		etcdKeyData := fmt.Sprintf("/servers/%s/%s/data", serverType, serverIP)
-		etcdValueData, err := json.Marshal(serverData)
-		if err != nil {
-			log.Printf("Failed to marshal server data: %v", err)
-			continue
-		}
-		_, err = etcdClient.Put(context.Background(), etcdKeyData, string(etcdValueData))
-		if err != nil {
-			log.Printf("Failed to upload server data to etcd: %v", err)
-		}
-	}
+// 		// Set key-value pair for server data
+// 		etcdKeyData := fmt.Sprintf("/servers/%s/%s/data", serverType, serverIP)
+// 		etcdValueData, err := json.Marshal(serverData)
+// 		if err != nil {
+// 			log.Printf("Failed to marshal server data: %v", err)
+// 			continue
+// 		}
+// 		_, err = etcdClient.Put(context.Background(), etcdKeyData, string(etcdValueData))
+// 		if err != nil {
+// 			log.Printf("Failed to upload server data to etcd: %v", err)
+// 		}
+// 	}
 
-	log.Println("Server details added to etcd successfully.")
-}
+// 	log.Println("Server details added to etcd successfully.")
+// }
