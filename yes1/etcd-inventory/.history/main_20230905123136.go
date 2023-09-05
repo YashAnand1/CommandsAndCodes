@@ -226,7 +226,7 @@ func getSpecificKeyAnoop(w http.ResponseWriter, r *http.Request) {
 	// Construct the etcd key for the server data
 	etcdKeyData := fmt.Sprintf(r.URL.Path)
 
-	response, _ := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
+	response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
 
 	w.Header().Set("Content-Type", "text/plain")
 	for _, kv := range response.Kvs {
@@ -319,86 +319,86 @@ func deleteSpecificKeyAnoop(w http.ResponseWriter, r *http.Request) {
 }
 
 // ////////////////////////////////
-// func getSpecificKey(w http.ResponseWriter, r *http.Request) {
+func getSpecificKey(w http.ResponseWriter, r *http.Request) {
 
-// 	// Extract the server type and IP from the URL path
-// 	log.Printf("response %v", r.URL.Path)
-// 	//parts := strings.Split(r.URL.Path, "/")
-// 	//serverType := parts[2]
-// 	//serverIP := parts[3]
+	// Extract the server type and IP from the URL path
+	log.Printf("response %v", r.URL.Path)
+	//parts := strings.Split(r.URL.Path, "/")
+	//serverType := parts[2]
+	//serverIP := parts[3]
 
-// 	// Connect to etcd
-// 	ctx := context.TODO()
-// 	etcdClient, err := clientv3.New(clientv3.Config{
-// 		Endpoints: []string{etcdHost},
-// 	})
-// 	if err != nil {
-// 		log.Printf("Failed to connect to etcd: %v", err)
-// 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	defer etcdClient.Close()
+	// Connect to etcd
+	ctx := context.TODO()
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{etcdHost},
+	})
+	if err != nil {
+		log.Printf("Failed to connect to etcd: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	defer etcdClient.Close()
 
-// 	// Construct the etcd key for the server data
-// 	etcdKeyData := fmt.Sprintf(r.URL.Path)
-// 	//response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
+	// Construct the etcd key for the server data
+	etcdKeyData := fmt.Sprintf(r.URL.Path)
+	//response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
 
-// 	//etcdKeyData := "/servers/VM/10.249.221.21/RAM"
-// 	//revisions := []int64{1066, 1065, 1064, 1063, 1062}
-// 	//revisions := make(map[int64]string)
+	//etcdKeyData := "/servers/VM/10.249.221.21/RAM"
+	//revisions := []int64{1066, 1065, 1064, 1063, 1062}
+	//revisions := make(map[int64]string)
 
-// 	var revisions int
+	var revisions int
 
-// 	response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
-// 	//response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithPrefix(), clientv3.WithSort(clientv3.SortByModRevision, clientv3.SortDescend))
-// 	//print(response)
-// 	log.Printf("response %v", response)
-// 	for _, kv := range response.Kvs {
-// 		revisions = int(kv.ModRevision)
-// 		log.Printf("revisions %v", revisions)
-// 	}
-// 	log.Printf("revision response: %v", revisions)
+	response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
+	//response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithPrefix(), clientv3.WithSort(clientv3.SortByModRevision, clientv3.SortDescend))
+	//print(response)
+	log.Printf("response %v", response)
+	for _, kv := range response.Kvs {
+		revisions = int(kv.ModRevision)
+		log.Printf("revisions %v", revisions)
+	}
+	log.Printf("revision response: %v", revisions)
 
-// 	var revisionslist []int64
+	var revisionslist []int64
 
-// 	for i := revisions; i >= revisions-5; i-- {
-// 		revisionslist = append(revisionslist, int64(i))
-// 	}
+	for i := revisions; i >= revisions-5; i-- {
+		revisionslist = append(revisionslist, int64(i))
+	}
 
-// 	values, err := getRevisionValues(etcdClient, etcdKeyData, revisionslist)
-// 	w.Header().Set("Content-Type", "text/plain")
+	values, err := getRevisionValues(etcdClient, etcdKeyData, revisionslist)
+	w.Header().Set("Content-Type", "text/plain")
 
-// 	for _, value := range values {
-// 		fmt.Fprintf(w, "Value: %s\n", value)
-// 		fmt.Fprintf(w, "---------------------------\n")
-// 	}
-// }
+	for _, value := range values {
+		fmt.Fprintf(w, "Value: %s\n", value)
+		fmt.Fprintf(w, "---------------------------\n")
+	}
+}
 
-// func getRevisionValues(client *clientv3.Client, key string, revisions []int64) ([]string, error) {
-// 	ctx := context.TODO()
+func getRevisionValues(client *clientv3.Client, key string, revisions []int64) ([]string, error) {
+	ctx := context.TODO()
 
-// 	//values := make(map[int64]string)
-// 	var values []string
+	//values := make(map[int64]string)
+	var values []string
 
-// 	for _, rev := range revisions {
-// 		response, err := client.Get(ctx, key, clientv3.WithRev(rev))
-// 		if err != nil {
-// 			return nil, err
-// 		}
+	for _, rev := range revisions {
+		response, err := client.Get(ctx, key, clientv3.WithRev(rev))
+		if err != nil {
+			return nil, err
+		}
 
-// 		if len(response.Kvs) > 0 {
-// 			value := string(response.Kvs[0].Value)
-// 			//values[rev] = value
-// 			values = append(values, value)
-// 			print(value)
+		if len(response.Kvs) > 0 {
+			value := string(response.Kvs[0].Value)
+			//values[rev] = value
+			values = append(values, value)
+			print(value)
 
-// 		} else {
-// 			print("Value not found")
-// 		}
-// 	}
+		} else {
+			print("Value not found")
+		}
+	}
 
-// 	return values, nil
-// }
+	return values, nil
+}
 
 func main() {
 	// Convert Excel to CSV
