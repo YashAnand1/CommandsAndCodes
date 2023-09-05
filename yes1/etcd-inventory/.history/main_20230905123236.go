@@ -226,7 +226,7 @@ func getSpecificKeyAnoop(w http.ResponseWriter, r *http.Request) {
 	// Construct the etcd key for the server data
 	etcdKeyData := fmt.Sprintf(r.URL.Path)
 
-	response, _ := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
+	response, err := etcdClient.Get(ctx, etcdKeyData, clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortAscend))
 
 	w.Header().Set("Content-Type", "text/plain")
 	for _, kv := range response.Kvs {
